@@ -11,6 +11,8 @@
 void ethernet_in(buf_t *buf)
 {
     // TO-DO
+    printf("hello world\n");
+    return ;
 }
 /**
  * @brief 处理一个要发送的数据包
