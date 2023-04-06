@@ -59,6 +59,49 @@ void arp_print()
 void arp_req(uint8_t *target_ip)
 {
     // TO-DO
+    //初始化发送缓存
+    buf_init(&txbuf, ETHERNET_MAX_TRANSPORT_UNIT + sizeof(ether_hdr_t));
+    // 填写ARP报头,即46字节的那个东西
+    // 填写目的地的IP
+    buf_add_header(&txbuf, 4*sizeof(uint8_t));
+    for(int i=0;i<4;i++){
+        txbuf.data[i]=target_ip[i];
+    }
+    // 填写目的MAC地址
+    buf_add_header(&txbuf, 6*sizeof(uint8_t));
+    for(int i=0;i<6;i++){
+        txbuf.data[i]=arp_init_pkt.target_mac[i];
+    }
+    //填写源IP地址
+    buf_add_header(&txbuf, 4*sizeof(uint8_t));
+    for(int i=0;i<4;i++){
+        txbuf.data[i]=arp_init_pkt.sender_ip[i];
+    }
+    //填写源MAC地址
+    buf_add_header(&txbuf, 6*sizeof(uint8_t));
+    for(int i=0;i<6;i++){
+        txbuf.data[i]=arp_init_pkt.sender_mac[i];
+    }
+    //填写操作类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    uint16_t *hdr = (uint16_t *)txbuf.data;
+    hdr=swap16(ARP_REQUEST);
+    //填写IP地址长度
+    buf_add_header(&txbuf, sizeof(uint8_t));
+    txbuf.data[0]=arp_init_pkt.pro_len;
+    //填写MAC的长度
+    buf_add_header(&txbuf, sizeof(uint8_t));
+    txbuf.data[0]=arp_init_pkt.hw_len;
+    //填写上层协议类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    hdr=(uint16_t *)txbuf.data;
+    hdr=arp_init_pkt.pro_type16;
+    //填写硬件类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    hdr=(uint16_t *)txbuf.data;
+    hdr=arp_init_pkt.hw_type16;
+    uint8_t temp_mac[] = {0xff,0xff,0xff,0xff,0xff,0xff};
+    ethernet_out(&txbuf,temp_mac,NET_PROTOCOL_ARP);
 }
 
 /**

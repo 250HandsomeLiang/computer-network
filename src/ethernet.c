@@ -3,6 +3,8 @@
 #include "driver.h"
 #include "arp.h"
 #include "ip.h"
+#include <stdio.h>
+#include <stdlib.h>
 /**
  * @brief 处理一个收到的数据包
  * 
@@ -23,6 +25,20 @@ void ethernet_in(buf_t *buf)
         ether_hdr_t *hdr = (ether_hdr_t *)buf2.data;
         uint16_t proto=swap16(hdr->protocol16);
         net_in(buf,proto,hdr->src);
+        //目的
+        printf("\n目的:");
+        for (size_t i = 0; i < 6; i++)
+        {
+            printf("%x ",hdr->dst[i]);
+        }
+        printf("\n");
+        //源
+        printf("\n源:");
+        for (size_t i = 0; i < 6; i++)
+        {
+            printf("%x ",hdr->src[i]);
+        }
+        printf("\n");
     }
 }
 /**
