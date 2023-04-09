@@ -60,7 +60,7 @@ void arp_req(uint8_t *target_ip)
 {
     // TO-DO
     //初始化发送缓存
-    buf_init(&txbuf, ETHERNET_MAX_TRANSPORT_UNIT + sizeof(ether_hdr_t));
+    buf_init(&txbuf, 0);
     // 填写ARP报头,即46字节的那个东西
     // 填写目的地的IP
     buf_add_header(&txbuf, 4*sizeof(uint8_t));
@@ -85,7 +85,7 @@ void arp_req(uint8_t *target_ip)
     //填写操作类型
     buf_add_header(&txbuf, sizeof(uint16_t));
     uint16_t *hdr = (uint16_t *)txbuf.data;
-    hdr=swap16(ARP_REQUEST);
+    *hdr=swap16(ARP_REQUEST);
     //填写IP地址长度
     buf_add_header(&txbuf, sizeof(uint8_t));
     txbuf.data[0]=arp_init_pkt.pro_len;
@@ -95,11 +95,11 @@ void arp_req(uint8_t *target_ip)
     //填写上层协议类型
     buf_add_header(&txbuf, sizeof(uint16_t));
     hdr=(uint16_t *)txbuf.data;
-    hdr=arp_init_pkt.pro_type16;
+    *hdr=arp_init_pkt.pro_type16;
     //填写硬件类型
     buf_add_header(&txbuf, sizeof(uint16_t));
     hdr=(uint16_t *)txbuf.data;
-    hdr=arp_init_pkt.hw_type16;
+    *hdr=arp_init_pkt.hw_type16;
     uint8_t temp_mac[] = {0xff,0xff,0xff,0xff,0xff,0xff};
     ethernet_out(&txbuf,temp_mac,NET_PROTOCOL_ARP);
 }
@@ -113,6 +113,48 @@ void arp_req(uint8_t *target_ip)
 void arp_resp(uint8_t *target_ip, uint8_t *target_mac)
 {
     // TO-DO
+    //初始化发送缓存
+    buf_init(&txbuf, 0);
+    // 填写ARP报头,即46字节的那个东西
+    // 填写目的地的IP
+    buf_add_header(&txbuf, 4*sizeof(uint8_t));
+    for(int i=0;i<4;i++){
+        txbuf.data[i]=target_ip[i];
+    }
+    // 填写目的MAC地址
+    buf_add_header(&txbuf, 6*sizeof(uint8_t));
+    for(int i=0;i<6;i++){
+        txbuf.data[i]=target_mac[i];
+    }
+    //填写源IP地址
+    buf_add_header(&txbuf, 4*sizeof(uint8_t));
+    for(int i=0;i<4;i++){
+        txbuf.data[i]=net_if_ip[i];
+    }
+    //填写源MAC地址
+    buf_add_header(&txbuf, 6*sizeof(uint8_t));
+    for(int i=0;i<6;i++){
+        txbuf.data[i]=net_if_mac[i];
+    }
+    //填写操作类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    uint16_t *hdr = (uint16_t *)txbuf.data;
+    *hdr=swap16(ARP_REPLY);
+    //填写IP地址长度
+    buf_add_header(&txbuf, sizeof(uint8_t));
+    txbuf.data[0]=arp_init_pkt.pro_len;
+    //填写MAC的长度
+    buf_add_header(&txbuf, sizeof(uint8_t));
+    txbuf.data[0]=arp_init_pkt.hw_len;
+    //填写上层协议类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    hdr=(uint16_t *)txbuf.data;
+    *hdr=arp_init_pkt.pro_type16;
+    //填写硬件类型
+    buf_add_header(&txbuf, sizeof(uint16_t));
+    hdr=(uint16_t *)txbuf.data;
+    *hdr=arp_init_pkt.hw_type16;
+    ethernet_out(&txbuf,target_mac,NET_PROTOCOL_ARP);
 }
 
 /**
@@ -122,8 +164,56 @@ void arp_resp(uint8_t *target_ip, uint8_t *target_mac)
  * @param src_mac 源mac地址
  */
 void arp_in(buf_t *buf, uint8_t *src_mac)
-{
+{   
+    //buf是46字节的负载
     // TO-DO
+    if(buf->len>8){
+        //检查硬件类型
+        int flag=1;
+        uint16_t *hdr = (uint16_t *)buf->data;
+        uint16_t data=(*hdr);
+        if(data!=arp_init_pkt.hw_type16)    flag=0;
+        //检查上层协议类型
+        hdr=(uint16_t *)(buf->data+2);
+        data=(*hdr);
+        if(data!=arp_init_pkt.pro_type16)   flag=0;
+        //检查MAC硬件地址长度
+        if(buf->data[4]!=arp_init_pkt.hw_len)  flag=0;
+        //检查IP协议地址长度
+        if(buf->data[5]!=arp_init_pkt.pro_len)     flag=0;
+        //检查操作类型
+        hdr=(uint16_t*)(buf->data+6);
+        data=(*hdr);
+        if(data!=swap16(ARP_REQUEST)&&data!=swap16(ARP_REPLY))   flag=0;
+        //检查通过
+        if(flag){
+            //寻找源主机的IP
+            uint8_t *src_ip=(uint8_t*)(buf->data+14);
+            map_set(&arp_table,src_ip,src_mac);
+            buf_t *temp_buf=map_get(&arp_buf,src_ip);
+            if(temp_buf){
+                //存在一个发送到源主机的buf,此时已经建立了src_ip->src_mac的映射
+                //直接发送数据包
+                ethernet_out(temp_buf,src_mac,NET_PROTOCOL_IP);
+                map_delete(&arp_buf,src_ip);
+            }else{
+                //不存在发送到当前主机的buf
+                //判断操作类型
+                hdr=(uint16_t*)(buf->data+6);
+                data=(*hdr);
+                //获取请求报文的目的ip
+                uint8_t *target_ip=(uint8_t*)(buf->data+24);
+                int visited_flag=1;
+                for(int i=0;i<4;i++){
+                    if(target_ip[i]!=net_if_ip[i])  visited_flag=0;
+                }
+                //请求本机MAC的请求报文
+                if(visited_flag&&data==swap16(ARP_REQUEST)){
+                    arp_resp(src_ip,src_mac);
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -136,6 +226,18 @@ void arp_in(buf_t *buf, uint8_t *src_mac)
 void arp_out(buf_t *buf, uint8_t *ip)
 {
     // TO-DO
+    uint8_t *p=map_get(&arp_table,ip);
+    if(p){
+        //非空
+        ethernet_out(buf,p,NET_PROTOCOL_IP);
+    }else{
+        if(map_size(&arp_buf)==0){
+            //没有包等待才发送
+            //ip是目的主机的ip,当接收到arp应答请求后,会自动建立ip->mac,之后将buf中多余的数据发送出去
+            map_set(&arp_buf,ip,buf);
+            arp_req(ip);
+        }
+    }
 }
 
 /**

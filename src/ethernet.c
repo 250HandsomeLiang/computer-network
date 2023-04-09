@@ -25,20 +25,6 @@ void ethernet_in(buf_t *buf)
         ether_hdr_t *hdr = (ether_hdr_t *)buf2.data;
         uint16_t proto=swap16(hdr->protocol16);
         net_in(buf,proto,hdr->src);
-        //目的
-        printf("\n目的:");
-        for (size_t i = 0; i < 6; i++)
-        {
-            printf("%x ",hdr->dst[i]);
-        }
-        printf("\n");
-        //源
-        printf("\n源:");
-        for (size_t i = 0; i < 6; i++)
-        {
-            printf("%x ",hdr->src[i]);
-        }
-        printf("\n");
     }
 }
 /**
@@ -63,8 +49,8 @@ void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol)
         hdr->dst[i]=mac[i];
     }
     //填写源MAC地址
-    for(int i=6;i<12;i++){
-        hdr->src[i-6]=mac[i];
+    for(int i=0;i<6;i++){
+        hdr->src[i]=net_if_mac[i];
     }
     //封装以太网类型,并进行大小端交换
     uint16_t pro=protocol;
