@@ -21,7 +21,7 @@ int buf_init(buf_t *buf, size_t len)
         return -1;
     }
     //有效数据的长度 MAC头部+负载
-    // 理论上一开始len是0,data是自顶向上进行添加的
+    // 理论上一开始len是0,data是自顶向下进行添加的，数组下标越小越后添加
     buf->len = len;
     buf->data = buf->payload + BUF_MAX_LEN / 2 - len;
     return 0;
